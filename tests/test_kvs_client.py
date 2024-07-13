@@ -2,12 +2,12 @@ from http import HTTPStatus
 from contextlib import AsyncExitStack
 from unittest import IsolatedAsyncioTestCase
 
-from src.kvs_client.client import (
-    KVSClient, 
+from src.kvs_client.client import KVSClient 
+from src.kvs_client.result import (
     BoolResult, 
-    IntResult,
+    IntResult, 
     StrResult, 
-    FloatResult, 
+    FloatResult,
     DictResult
 )
 
@@ -35,28 +35,28 @@ class KVSClientTest(IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         await self.exit_stack.aclose()
-    
-    # async def test_store_integers(self) -> None:
-    #     """Test store integers in a remote storage"""
-    #     key: str = "number"
-    #     value: int = 999997
-        
-    #     res: BoolResult = await self.kvs_client.int_add(key)
-    #     self.assertEqual(res.error, None)
-    #     self.assertEqual(res.status_code, HTTPStatus.OK)
-        
-    #     res: IntResult = await self.kvs_client.int_get(key)
-    #     self.assertEqual(res.error, None)
-    #     self.assertEqual(res.status_code, HTTPStatus.OK)
-    #     self.assertEqual(res.result, value)
 
-    #     res: BoolResult = await self.kvs_client.int_del(key)
-    #     self.assertEqual(res.error, None)
-    #     self.assertTrue(res.result) # True if the value was deleted, False otherwise
+    async def test_store_integers(self) -> None:
+        """Test store integers in a remote storage"""
+        key: str = "number"
+        value: int = 999997
         
-    #     # Make sure that the value doesn't exist
-    #     res: BoolResult = await self.kvs_client.int_get(key)
-    #     self.assertNotEqual(res.error, None)
+        res: BoolResult = await self.kvs_client.int_add(key)
+        self.assertEqual(res.error, None)
+        self.assertEqual(res.status_code, HTTPStatus.OK)
+        
+        res: IntResult = await self.kvs_client.int_get(key)
+        self.assertEqual(res.error, None)
+        self.assertEqual(res.status_code, HTTPStatus.OK)
+        self.assertEqual(res.result, value)
+
+        res: BoolResult = await self.kvs_client.int_del(key)
+        self.assertEqual(res.error, None)
+        self.assertTrue(res.result) # True if the value was deleted, False otherwise
+        
+        # Make sure that the value doesn't exist
+        res: BoolResult = await self.kvs_client.int_get(key)
+        self.assertNotEqual(res.error, None)
     
-    # async def test_store_strings(self) -> None:
-    #     """Test store strings in a remote storage"""
+    async def test_store_strings(self) -> None:
+        """Test store strings in a remote storage"""

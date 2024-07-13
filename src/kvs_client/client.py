@@ -1,6 +1,5 @@
 from types import TracebackType 
 import typing as t
-from dataclasses import dataclass, field
 from contextlib import AsyncExitStack
 from http import HTTPStatus
 from yarl import URL
@@ -9,51 +8,15 @@ from aiohttp import (
     ClientSession, 
     ClientConnectionError, 
     ClientOSError, 
-    ClientResponse
+    ClientResponse, 
+    ClientTimeout,
 )
 import logging
 import asyncio
 
-from .typing import *
-
-KVS_SERVICE_DEFAULT_URL = "http://127.0.0.1"
-KVS_DEFAULT_PORT = 8080
-
+from .result import *
 
 _logger = logging.getLogger(__name__)
-
-# TODO: BaseResult shold contain the command name which was invoked and parameters
-@dataclass
-class BaseResult:
-    status_code: int = field(default=0)
-    status_msg: str = field(default="")
-    error: t.Optional[str] = None
-
-
-@dataclass
-class StrResult(BaseResult):
-    result: str = field(default="")
-
-
-@dataclass
-class IntResult(BaseResult):
-    result: int = field(default=0)
-
-
-@dataclass
-class BoolResult(BaseResult):
-    result: bool = field(default=False)
-
-
-@dataclass
-class FloatResult:
-    result: float = field(default=0.0)
-
-
-@dataclass 
-class DictResult(BaseResult):
-    # https://stackoverflow.com/questions/53632152/why-cant-dataclasses-have-mutable-defaults-in-their-class-attributes-declaratio
-    result: dict[str, str] = field(default_factory=dict)
 
 class HttpMethod(IntEnum):
     GET = 1
@@ -80,13 +43,14 @@ class KVSClient:
 
     # NOTE: Instead of passing both the url and a port, we can pass the whole url
     def __init__(
-        self, base_url: URL | str, retries_count: int = 3, delay: float = 2.0
+        self, base_url: URL | str, retries_count: int=5, delay: float=2.0
     ) -> None:
         self._base_url = self._build_base_url(base_url)
         self._retries_count = retries_count
         self._delay = delay
         self._exit_stack: AsyncExitStack = None
         self._client: ClientSession = None
+        self._request_timeout = ClientTimeout(total=15) # seconds 
 
     def _build_base_url(self, base_url: URL | str) -> URL:
         return URL(base_url) / self._service_name / self._service_version.replace(".", "-")
@@ -94,81 +58,111 @@ class KVSClient:
     def __enter__(self):
         raise ValueError("Not supported, use async context instead")
 
-    # linter won't pass here!
-    def __exit__(
-        self,
-        exc_type,
-        exc_val: t.Optional[BaseException],
-        exc_tb: t.Optional[TracebackType],
-    ):
+    def __exit__(self, exc_type, exc_val: t.Optional[BaseException], 
+                 exc_tb: t.Optional[TracebackType]) -> None:
         pass
 
     async def __aenter__(self) -> "KVSClient":
+        """
+        """
         self._exit_stack = AsyncExitStack()
         self._client = await self._exit_stack.enter_async_context(
-            #  Pass all the necessary params
-            ClientSession()
+            ClientSession(timeout=self._request_timeout)
         )
         return self
 
-    async def __aexit__(
-        self,
-        exc_type,  # this has to a be a type of Optional[BaseException]
+
+    async def __aexit__(self, exc_type,
         exc_val: t.Optional[BaseException],
         exc_tb: t.Optional[TracebackType],
     ) -> None:
+        """"""
         if self._exit_stack:
             await self._client.close()
             self._exit_stack = None
 
+
     async def echo(self, input: str, /) -> StrResult:
-        res = StrResult()
-        headers = self._defaut_headers | {"content-length": str(len(input))}
-        async with self._client.post(
-            self._base_url / "echo", data=input, headers=headers
-        ) as resp:
-            res.status_code = resp.status
-            if (resp.status != HTTPStatus.OK) and resp.content_length:
-                # The body will contain an error if the response status is not 200
-                res.remote_error = await resp.text()
-                return res
-            else:
-                res.result = await resp.text()
-            return res
+        """Invoke echo remote procedural call. 
+        Mainly used for testing the connection between kvs service and a client, 
+        and doesn't modify the state of the storage.
+        
+        :param input: string passed to echo rpc.
+        """
+        async with self._client.post(self._base_url / "echo", data=input) as resp:
+            echo_res = StrResult(url=resp.url, status_code=resp.status, params=[input])
+            if resp.status != HTTPStatus.OK:
+                echo_res.error = await resp.text()
+                return echo_res
+            echo_res.result = await resp.text()
+            return echo_res
+
 
     async def hello(self) -> StrResult:
-        res = StrResult()
+        """Invoke hello remote procedural call.
+        """
         async with self._client.post(self._base_url / "hello") as resp:
-            res.status_code = resp.status
-            if (resp.status != HTTPStatus.OK) and resp.content_length:
-                # The body will contain an error if the response status is not 200
-                res.remote_error = await resp.text()
-                return res
-            else:
-                res.result = await resp.text()
-            return res
+            hello_res = StrResult(url=resp.url, status_code=resp.status)
+            if resp.status != HTTPStatus.OK:
+                hello_res.error = await resp.text()
+                return hello_res
+            hello_res.result = await resp.text()
+            return hello_res
+
 
     async def fibo(self, n: int, /) -> IntResult:
-        url = (self._base_url / "fibo").with_query({"n": n})
-        result = IntResult()
+        """Invoke fibo remote procedural callback 
+        to compute the fibonacci number with index n.
+        Used exclusively for testing the connection and doesn't modify the state 
+        of the remote storage.
+        
+        :param n: fibonacci sequence index.
+        """
+        url = URL(self._base_url / "fibo").with_query({"n": str(n)})
+        res = IntResult(url=url, params=(n))
 
-        async with self._client.post(url) as resp:
-            result.status_code = resp.status
-            if resp.status != HTTPStatus.OK:
-                result.remote_error = await resp.text()
-                return result
+        try:
+            async with self._client.post(url) as resp:
+                res.status_code = resp.status
+                if resp.status != HTTPStatus.OK:
+                    res.error = await resp.text()
+                    return res
+                res.result = int(await resp.text(), base=10)
+                return res
+        except asyncio.TimeoutError as e:
+            res.error = e.__doc__
+            return res
 
-            result.result = int(await resp.text(), base=10)
-            return result
 
     # https://stackoverflow.com/questions/24735311/what-does-the-slash-mean-when-help-is-listing-method-signatures
     # All arguments prior to / are positional only arguments, 
     # and all arguments after / could be positional or keyword
     async def int_add(self, key: str, value: int, /) -> BoolResult:
         """"""
+        headers = self._defaut_headers | {
+            "content-type": "application/octeat-stream", 
+            "content-length": len(str(value)),
+        }
+        async with self._client.put(self._base_url / f"intadd/{key}", data=str(value), headers=self._defaut_headers) as resp:
+            bool_res = BoolResult(url=resp.url, status_code=resp.status, params=(value))
+            if resp.status != HTTPStatus.OK: # Or HTTPStatus.CREATED?
+                bool_res.error = await resp.text()
+                return bool_res
+            bool_res.result = True
+            return bool_res 
+
 
     async def int_get(self, key: str, /) -> IntResult:
-        """"""
+        """
+        """
+        async with self._client.get(self._base_url / f"intget/{key}") as resp:
+            int_res = IntResult(status_code=resp.status, url=resp.url, params=key)
+            if resp.status != HTTPStatus.OK:
+                int_res.error = await resp.text()
+            else:
+                int_res.result = int(await resp.text())
+            return int_res
+
 
     async def int_del(self, key: str, /) -> BoolResult:
         """"""
@@ -209,9 +203,9 @@ class KVSClient:
         # as a callable object. The only problem in that case would be that we won't be able to see the function signature
         retry_attempt = 0
         resp: ClientResponse
-        while retry_attemt <= self._retries_count:
+        while retry_attempt <= self._retries_count:
             # TODO: Increment the sleep count gradually
-            retry_attemt += 1
+            retry_attempt += 1
             try:
                 match method:
                     case HttpMethod.GET:
@@ -234,7 +228,7 @@ class KVSClient:
                 
             # Handle possible low-level connections problems
             except (ClientConnectionError, ClientOSError) as e:
-                if retry_attemt > self._retries_count:
+                if retry_attempt > self._retries_count:
                     raise
                 # _log.error("Connection failure, retry attempt %i", retry_attempt)
 
@@ -244,36 +238,3 @@ class KVSClient:
 
         # Do we want to throw an exception if we run out of retries?
         return resp
-
-
-async def kvs_echo(service_url: URL | str, input: str, /) -> None:
-    """_summary_
-    """
-    async with KVSClient(service_url) as client:
-        res: StrResult = await client.echo(input)
-        _logger.info("res %s", res.result)
-
-
-async def kvs_int_add(service_url: URL | str, key: str, value: int, /) -> None:
-    """Put value into the remote storage using the specified `key`.
-    Later, the value can be retrieved from the storage using the same key.
-
-    :param service_url: url to the kvs service.
-    :param key: hash key used to store the value.
-    :param value: value to be stored.
-    """
-    async with KVSClient(service_url) as client:
-        res: BoolResult = await client.int_add(key, value)
-        _logger.info("res %s", res.result)
-
-
-async def kvs_int_get(service_url: URL | str, key: str, /) -> None:
-    """_summary_
-    """
-    async with KVSClient(service_url) as client:
-        res: IntResult = await client.int_get(key)
-        return res
-
-async def kvs_int_del() -> None:
-    pass
-
