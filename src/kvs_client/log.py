@@ -36,7 +36,7 @@ LOGGING_CONFIG = {
         },
     },
     "filters": {
-        "databin": {
+        "kvs": {
             "()": LogAugmentationFilter,
         },
     },
@@ -44,7 +44,7 @@ LOGGING_CONFIG = {
         "console": {
             "class": "logging.StreamHandler",
             "formatter": "json",
-            "filters": ["databin"],
+            "filters": ["kvs"],
             "stream": "ext://sys.stderr",
         },
     },
