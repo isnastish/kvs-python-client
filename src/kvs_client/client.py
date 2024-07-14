@@ -1,5 +1,5 @@
-from types import TracebackType 
 import typing as t
+from types import TracebackType 
 from contextlib import AsyncExitStack
 from http import HTTPStatus
 from yarl import URL
@@ -69,7 +69,10 @@ class KVSClient:
         """
         self._exit_stack = AsyncExitStack()
         self._client = await self._exit_stack.enter_async_context(
-            ClientSession(timeout=self._request_timeout, trace_configs=[create_trace_config()])
+            ClientSession(
+                timeout=self._request_timeout, 
+                trace_configs=[create_trace_config()], 
+            )
         )
         return self
 
@@ -91,24 +94,24 @@ class KVSClient:
         
         :param input: string passed to echo rpc.
         """
-        async with self._client.post(self._base_url / "echo", data=input) as resp:
-            echo_res = StrResult(url=resp.url, status=resp.status, params=[input])
-            if resp.status != HTTPStatus.OK:
-                echo_res.error = await resp.text()
+        async with self._client.post(self._base_url / "echo", data=input) as r:
+            echo_res = StrResult(base=BaseResult(url=r.url, status=r.status, params=[input]))
+            if r.status != HTTPStatus.OK:
+                echo_res.base.error = await r.text()
                 return echo_res
-            echo_res.result = await resp.text()
+            echo_res.result = await r.text()
             return echo_res
 
 
     async def hello(self) -> StrResult:
         """Invoke hello remote procedural call.
         """
-        async with self._client.post(self._base_url / "hello") as resp:
-            hello_res = StrResult(url=resp.url, status=resp.status)
-            if resp.status != HTTPStatus.OK:
-                hello_res.error = await resp.text()
+        async with self._client.post(self._base_url / "hello") as r:
+            hello_res = StrResult(base=BaseResult(url=r.url, status=r.status))
+            if r.status != HTTPStatus.OK:
+                hello_res.base.error = await r.text()
                 return hello_res
-            hello_res.result = await resp.text()
+            hello_res.result = await r.text()
             return hello_res
 
 
@@ -121,34 +124,34 @@ class KVSClient:
         :param n: fibonacci sequence index.
         """
         url = URL(self._base_url / "fibo").with_query({"n": str(n)})
-        fibo_res = IntResult(url=url, params=(n))
+        fibo_res = IntResult(base=BaseResult(url=url, params=(n)))
 
         try:
-            async with self._client.post(url) as resp:
-                fibo_res.status = resp.status
-                if resp.status != HTTPStatus.OK:
-                    fibo_res.error = await resp.text()
+            async with self._client.post(url) as r:
+                fibo_res.base.status = r.status
+                if r.status != HTTPStatus.OK:
+                    fibo_res.base.error = await r.text()
                     return fibo_res
-                fibo_res.result = int(await resp.text(), base=10)
+                fibo_res.result = int(await r.read(), base=10)
                 return fibo_res
         except asyncio.TimeoutError as e:
-            fibo_res.error = e.__doc__
+            fibo_res.base.error = e.__doc__
             return fibo_res
 
 
     async def incr(self, key: str, /) -> IntResult:
         """_summary_
 
-        :param key: 
+        :param key:
         """
         # TODO: Change endpoint on the service side to `incr`
-        async with self._client.put(self._base_url / f"intincr/{key}") as resp:
-            incr_res = IntResult(status=resp.status, url=resp.url, params=(key))
-            if resp.status != HTTPStatus.OK:
-                incr_res.error = await resp.text()
-            else:
-                # The body should contain a value (before the increment)
-                incr_res.result = int(await resp.text())
+        async with self._client.put(self._base_url / f"intincr/{key}") as r:
+            incr_res = IntResult(base=BaseResult(r.status, r.url, params=(key)))
+            if r.status != HTTPStatus.OK:
+                incr_res.base.error = await r.text()
+                return incr_res
+            # The body should contain a value (before the increment)
+            incr_res.result = int(await r.text(), base=10)
             return incr_res
 
 
@@ -159,12 +162,12 @@ class KVSClient:
         :param value: 
         :returns 
         """ 
-        async with self._client.put(self._base_url / f"intincrby/{key}", data=str(value), headers=self._defaut_headers) as resp:
-            incrby_res = IntResult(status=resp.status, url=resp.url, params=(key, value))
-            if resp.status != HTTPStatus.OK:
-                incrby_res.error = await resp.text()
-            else:
-                incrby_res.result = int(await resp.text(), base=10)
+        async with self._client.put(self._base_url / f"intincrby/{key}", data=str(value), headers=self._defaut_headers) as r:
+            incrby_res = IntResult(base=BaseResult(status=r.status, url=r.url, params=(key, value)))
+            if r.status != HTTPStatus.OK:
+                incrby_res.base.error = await r.text()
+                return incrby_res
+            incrby_res.result = int(await r.read(), base=10)
             return incrby_res
 
 
@@ -175,10 +178,10 @@ class KVSClient:
         :param value:
         :returns
         """
-        async with self._client.put(self._base_url / f"intadd/{key}", data=str(value), headers=self._defaut_headers) as resp:
-            bool_res = BoolResult(url=resp.url, status=resp.status, params=(value))
-            if resp.status != HTTPStatus.OK: # Or HTTPStatus.CREATED?
-                bool_res.error = await resp.text()
+        async with self._client.put(self._base_url / f"intadd/{key}", data=str(value), headers=self._defaut_headers) as r:
+            bool_res = BoolResult(base=BaseResult(url=r.url, status=r.status, params=(value)))
+            if r.status != HTTPStatus.OK: # NOTE: Server should return CREATED status
+                bool_res.base.error = await r.text()
                 return bool_res
             bool_res.result = True
             return bool_res 
@@ -187,12 +190,12 @@ class KVSClient:
     async def int_get(self, key: str, /) -> IntResult:
         """
         """
-        async with self._client.get(self._base_url / f"intget/{key}") as resp:
-            int_res = IntResult(status=resp.status, url=resp.url, params=key)
-            if resp.status != HTTPStatus.OK:
-                int_res.error = await resp.text()
-            else:
-                int_res.result = int(await resp.text())
+        async with self._client.get(self._base_url / f"intget/{key}") as r:
+            int_res = IntResult(base=BaseResult(status=r.status, url=r.url, params=key))
+            if r.status != HTTPStatus.OK:
+                int_res.base.error = await r.text()
+                return int_res
+            int_res.result = int(await r.text(), base=10)
             return int_res
 
 
@@ -200,15 +203,15 @@ class KVSClient:
         """Delete key if exists from the remote storage.
 
         :param key: key to be deleted. 
-        :returns BoolResult class with result set to true if the key was deleted.
+        :return BoolResult class with result set to true if the key was deleted.
         """
-        async with self._client.delete(self._base_url / f"intdel/{key}") as resp:
-            bool_res = BoolResult(status=resp.status, url=resp.url, params=key)
-            if resp.status != HTTPStatus.OK:
-                bool_res.error = await resp.text()
-            else:
-                if resp.headers.get("Deleted"): 
-                    bool_res.result = True
+        async with self._client.delete(self._base_url / f"intdel/{key}") as r:
+            bool_res = BoolResult(base=BaseResult(status=r.status, url=r.url, params=key))
+            if r.status != HTTPStatus.OK:
+                bool_res.base.error = await r.text()
+                return bool_res
+            if r.headers.get("Deleted"): 
+                bool_res.result = True
             return bool_res
 
 
@@ -219,21 +222,57 @@ class KVSClient:
         :param value:
         :return: 
         """
+        async with self._client.put(self._base_url / f"floatadd/{key}", data=str(value), headers=self._defaut_headers) as r:
+            float_res = FloatResult(base=BaseResult(status=r.status, url=r.url, params=(key, value)))
+            if r.status != HTTPStatus.OK:
+                float_res.base.error = await r.text()
+                return float_res
+            # assign the ronse status
+            float_res.result = r.status
+            return float_res
+
 
     async def float_get(self, key: str, /) -> FloatResult:
-        """"""
+        """Get float value from the remote storage with the specified key.
+        
+        :param key: key which references value in a remote storage.
+        :return: FloatResult containing the value.
+        """
+        async with self._client.get(self._base_url / f"floatget/{key}", headers=self._defaut_headers) as r:
+            float_res = FloatResult(base=BaseResult(status=r.status, url=r.url, params=(key)))
+            if r.status != HTTPStatus.OK:
+                float_res.base.error = await r.text()
+                return float_res
+            float_res.result = float(await r.read())
+            return float_res
+
 
     async def float_del(self, key: str, /) -> BoolResult:
-        """"""
+        """ 
+
+        :param key: key to be deleted.
+        :return: BoolResult with result set to True if the value was deleted.
+        """
+        async with self._client.delete(self._base_url / f"floatdel/{key}", headers=self._defaut_headers) as r:
+            bool_res = BoolResult(base=BaseResult(status=r.status, url=r.url, params=(key,)))
+            if r.status != HTTPStatus.OK:
+                bool_res.base.error = await r.text()
+                return bool_res
+            bool_res.result = True if r.headers.get("Deleted") else False
+            return bool_res
+
 
     async def str_add(self, key: str, value: str, /) -> BoolResult:
         """"""
-    
+
+
     async def str_get(self, key: str, /) -> StrResult:
         """"""
-        
+
+
     async def str_del(self, key: str, /) -> BoolResult:
         """"""
+
 
     # TODO: Once the KVS service is capable of storing arbitrary types, 
     # such as dict[str, int/float/str] etc, this function has to be adjusted accordingly
