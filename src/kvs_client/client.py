@@ -11,6 +11,8 @@ from aiohttp import (
     ClientResponse, 
     ClientTimeout,
 )
+from opentelemetry.instrumentation.aiohttp_client import create_trace_config
+
 import logging
 import asyncio
 
@@ -67,7 +69,7 @@ class KVSClient:
         """
         self._exit_stack = AsyncExitStack()
         self._client = await self._exit_stack.enter_async_context(
-            ClientSession(timeout=self._request_timeout)
+            ClientSession(timeout=self._request_timeout, trace_configs=[create_trace_config()])
         )
         return self
 
@@ -90,7 +92,7 @@ class KVSClient:
         :param input: string passed to echo rpc.
         """
         async with self._client.post(self._base_url / "echo", data=input) as resp:
-            echo_res = StrResult(url=resp.url, status_code=resp.status, params=[input])
+            echo_res = StrResult(url=resp.url, status=resp.status, params=[input])
             if resp.status != HTTPStatus.OK:
                 echo_res.error = await resp.text()
                 return echo_res
@@ -102,7 +104,7 @@ class KVSClient:
         """Invoke hello remote procedural call.
         """
         async with self._client.post(self._base_url / "hello") as resp:
-            hello_res = StrResult(url=resp.url, status_code=resp.status)
+            hello_res = StrResult(url=resp.url, status=resp.status)
             if resp.status != HTTPStatus.OK:
                 hello_res.error = await resp.text()
                 return hello_res
@@ -119,32 +121,62 @@ class KVSClient:
         :param n: fibonacci sequence index.
         """
         url = URL(self._base_url / "fibo").with_query({"n": str(n)})
-        res = IntResult(url=url, params=(n))
+        fibo_res = IntResult(url=url, params=(n))
 
         try:
             async with self._client.post(url) as resp:
-                res.status_code = resp.status
+                fibo_res.status = resp.status
                 if resp.status != HTTPStatus.OK:
-                    res.error = await resp.text()
-                    return res
-                res.result = int(await resp.text(), base=10)
-                return res
+                    fibo_res.error = await resp.text()
+                    return fibo_res
+                fibo_res.result = int(await resp.text(), base=10)
+                return fibo_res
         except asyncio.TimeoutError as e:
-            res.error = e.__doc__
-            return res
+            fibo_res.error = e.__doc__
+            return fibo_res
 
 
-    # https://stackoverflow.com/questions/24735311/what-does-the-slash-mean-when-help-is-listing-method-signatures
-    # All arguments prior to / are positional only arguments, 
-    # and all arguments after / could be positional or keyword
+    async def incr(self, key: str, /) -> IntResult:
+        """_summary_
+
+        :param key: 
+        """
+        # TODO: Change endpoint on the service side to `incr`
+        async with self._client.put(self._base_url / f"intincr/{key}") as resp:
+            incr_res = IntResult(status=resp.status, url=resp.url, params=(key))
+            if resp.status != HTTPStatus.OK:
+                incr_res.error = await resp.text()
+            else:
+                # The body should contain a value (before the increment)
+                incr_res.result = int(await resp.text())
+            return incr_res
+
+
+    async def incr_by(self, key: str, value: int, /) -> IntResult:
+        """_summary_
+
+        :param key: 
+        :param value: 
+        :returns 
+        """ 
+        async with self._client.put(self._base_url / f"intincrby/{key}", data=str(value), headers=self._defaut_headers) as resp:
+            incrby_res = IntResult(status=resp.status, url=resp.url, params=(key, value))
+            if resp.status != HTTPStatus.OK:
+                incrby_res.error = await resp.text()
+            else:
+                incrby_res.result = int(await resp.text(), base=10)
+            return incrby_res
+
+
     async def int_add(self, key: str, value: int, /) -> BoolResult:
-        """"""
-        headers = self._defaut_headers | {
-            "content-type": "application/octeat-stream", 
-            "content-length": len(str(value)),
-        }
+        """_summary_
+        
+        :param key:
+        :param value:
+        :returns
+        """
         async with self._client.put(self._base_url / f"intadd/{key}", data=str(value), headers=self._defaut_headers) as resp:
-            bool_res = BoolResult(url=resp.url, status_code=resp.status, params=(value))
+            bool_res = BoolResult(url=resp.url, status=resp.status, params=(value))
             if resp.status != HTTPStatus.OK: # Or HTTPStatus.CREATED?
                 bool_res.error = await resp.text()
                 return bool_res
@@ -156,7 +188,7 @@ class KVSClient:
         """
         """
         async with self._client.get(self._base_url / f"intget/{key}") as resp:
-            int_res = IntResult(status_code=resp.status, url=resp.url, params=key)
+            int_res = IntResult(status=resp.status, url=resp.url, params=key)
             if resp.status != HTTPStatus.OK:
                 int_res.error = await resp.text()
             else:
@@ -165,10 +197,28 @@ class KVSClient:
 
 
     async def int_del(self, key: str, /) -> BoolResult:
-        """"""
+        """Delete key if exists from the remote storage.
+
+        :param key: key to be deleted. 
+        :returns BoolResult class with result set to true if the key was deleted.
+        """
+        async with self._client.delete(self._base_url / f"intdel/{key}") as resp:
+            bool_res = BoolResult(status=resp.status, url=resp.url, params=key)
+            if resp.status != HTTPStatus.OK:
+                bool_res.error = await resp.text()
+            else:
+                if resp.headers.get("Deleted"): 
+                    bool_res.result = True
+            return bool_res
+
 
     async def float_add(self, key: str, value: float, /) -> BoolResult:
-        """"""
+        """_summary_
+        
+        :param key:
+        :param value:
+        :return: 
+        """
 
     async def float_get(self, key: str, /) -> FloatResult:
         """"""

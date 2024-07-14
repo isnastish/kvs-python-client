@@ -7,7 +7,7 @@ class BaseResult:
     """_summary_
     """
     
-    status_code: int = field(default=0)
+    status: int = field(default=0)
     url: URL = field(default=URL())
     error: t.Optional[str] = None
     params: t.Optional[tuple[t.Any]] = None
@@ -35,7 +35,7 @@ class BoolResult(BaseResult):
 
 
 @dataclass
-class FloatResult:
+class FloatResult(BaseResult):
     """_summary_
     """
     result: float = field(default=0.0)
