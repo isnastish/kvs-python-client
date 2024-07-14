@@ -2,6 +2,7 @@ import typing as t
 from dataclasses import dataclass, field
 from yarl import URL
 
+# NOTE: Use inheritance instead to access status/url/error members directly
 
 @dataclass
 class BaseResult:

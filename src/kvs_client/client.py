@@ -276,8 +276,17 @@ class KVSClient:
 
     # TODO: Once the KVS service is capable of storing arbitrary types, 
     # such as dict[str, int/float/str] etc, this function has to be adjusted accordingly
+    # NOTE: Add method should return IntResult which contains the response status as a result
     async def dict_add(self, key: str, value: dict[str, str], /) -> BoolResult:
         """"""
+        async with self._client.put(self._base_url / f"mapadd/{key}", data=value, headers=self._defaut_headers) as r:
+            res = DictResult(base=BaseResult(status=r.status, url=r.url, params=(key, value)))
+            if r.status != HTTPStatus.OK:
+                res.base.error = await r.text()
+                return res
+            res.result = (r.status == 200)
+            return res
+
 
     async def dict_get(self, key: str, /) -> DictResult:
         """"""

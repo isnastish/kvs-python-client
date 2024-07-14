@@ -13,6 +13,9 @@ from .result import (
     BaseResult
 )
 
+# NOTE: Database transactions in nutshell
+# https://stackoverflow.com/questions/974596/what-is-a-database-transaction
+# pgx code samples: https://github.com/jackc/pgx-top-to-bottom
 
 # TODO: Move this to KVS client?
 _KVS_SERVICE_URL = os.getenv("KVS_SERVICE_URL", "http://localhost:8080")
@@ -283,12 +286,22 @@ def float_del(ctx: click.Context, key: list[str]) -> None:
 
     asyncio.run(kvs_float_del(key))
 
+# @root.command()
+# @click.argument("key", type=str)
+# @click.argument("value" )
+# @click.pass_context
+# def dict_add(ctx: click.Context, key: str, value: dict[str, str]) -> None:
+#     """_summary_
 
-@root.command()
-@click.argument("key", type=str)
-@click.argument("value", type=dict[str, str])
-@click.pass_context
-def dict_add(ctx: click.Context, key: str, value: dict[str, str]) -> None:
-    """
-    """
-    
+#     :param ctx:
+#     :param key:
+#     :param value:
+#     """
+#     async def kvs_dict_add(key: str, value: dict[str, str], /) -> None:
+#         async with KVSClient(ctx.obj["service_url"]) as client:
+#             res: DictResult = await client.dict_add(key, value)
+#             if _click_echo_if_error(res.base):
+#                 return
+#             click.echo(res.result)
+
+#     asyncio.run(kvs_dict_add(key, value))
