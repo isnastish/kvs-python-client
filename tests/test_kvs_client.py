@@ -1,5 +1,6 @@
 import asyncio
-
+import random
+import string
 from contextlib import AsyncExitStack
 from unittest import IsolatedAsyncioTestCase
 
@@ -46,13 +47,13 @@ class KVSClientTest(IsolatedAsyncioTestCase):
         
         echo_str: str = "ECHO ECHo ECho Echo echo echO ecHO eCHO ECHO"
         res: StrResult = await self.kvs_client.echo(echo_str)
-        self.assertEqual(res.base.error, None)
-        self.assertEqual(res.base.status, 200)
+        self.assertEqual(res.error, None)
+        self.assertEqual(res.status, 200)
         self.assertEqual(res.result, echo(echo_str))
         
         res = await self.kvs_client.hello()
-        self.assertEqual(res.base.error, None)
-        self.assertEqual(res.base.status, 200)
+        self.assertEqual(res.error, None)
+        self.assertEqual(res.status, 200)
         self.assertTrue(res.result)
 
         # fibo sequence of the first 10 digits
@@ -69,21 +70,29 @@ class KVSClientTest(IsolatedAsyncioTestCase):
         value: int = 999997
         
         res: BoolResult = await self.kvs_client.int_add(key, value)
-        self.assertEqual(res.base.error, None)
-        self.assertEqual(res.base.status, 200)
+        self.assertEqual(res.error, None)
+        self.assertEqual(res.status, 200)
         
         res: IntResult = await self.kvs_client.int_get(key)
-        self.assertEqual(res.base.error, None)
-        self.assertEqual(res.base.status, 200)
+        self.assertEqual(res.error, None)
+        self.assertEqual(res.status, 200)
         self.assertEqual(res.result, value)
 
         res: BoolResult = await self.kvs_client.int_del(key)
-        self.assertEqual(res.base.error, None)
+        self.assertEqual(res.error, None)
         self.assertTrue(res.result) # True if the value was deleted, False otherwise
         
         # Make sure that the value doesn't exist
         res: BoolResult = await self.kvs_client.int_get(key)
-        self.assertNotEqual(res.base.error, None)
+        self.assertNotEqual(res.error, None)
     
     async def test_store_strings(self) -> None:
         """Test store strings in a remote storage"""
+        key = "str_key"
+        value = "".join(random.choices(string.hexdigits, k=4096))
+        
+        print(value)
+        res: StrResult = await self.kvs_client.str_add(key, value)
+        self.assertEqual(res.error, None)
+        self.assertEqual(res.status, 200)
+        self.assertEqual(res.result, value)

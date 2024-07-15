@@ -13,46 +13,46 @@ from .result import (
     BaseResult
 )
 
-# NOTE: Database transactions in nutshell
-# https://stackoverflow.com/questions/974596/what-is-a-database-transaction
-# pgx code samples: https://github.com/jackc/pgx-top-to-bottom
-
 # TODO: Move this to KVS client?
 _KVS_SERVICE_URL = os.getenv("KVS_SERVICE_URL", "http://localhost:8080")
 
-# NOTE: If it seems like we have a lot of duplications, each kvs_... function could
-# be replaced with this one which would make the understanding a bit harder. 
- 
-# _KVSCommandT: t.TypeAlias = t.Callable[[KVSClient, str, t.Optional[t.Any]], 
-#                                        FloatResult|IntResult|BoolResult|StrResult|DictResult]
+_ResultT: t.TypeAlias = t.Union[FloatResult|IntResult|BoolResult|StrResult|DictResult]
+_KVSCommandT: t.TypeAlias = t.Callable[[KVSClient, str, t.Optional[t.Any]], _ResultT]
 
-# async def _kvs_command(ctx: click.Context, member_func: _KVSCommandT, *args) -> None:
-#     """
+
+# NOTE: If it's possible, try to avoid using this function, it will make the code less verbose.
+async def _kvs_command(ctx: click.Context, query_func: _KVSCommandT, v: dict[str, t.Any]) -> None:
+    """
     
-#     :param ctx: click context containing service url.
-#     :param func: KVSClient member function, like int_add, int_del etc.
-#     :param args: additional arguments forwarded to func.
-#               it's a key and an optional value.
-#     """
-#     async with KVSClient(ctx.obj["service_url"]) as client:
-#         res = await member_func(client, *args)
-#         if res.error:
-#             return
-#         click.echo(res.result)
-# Usage:
-# asyncio.run(_kvs_command(ctx, KVSClient.incr, key))
+    :param ctx: click context containing service url.
+    :param func: KVSClient member function, like int_add, int_del etc.
+    :param args: additional arguments forwarded to func.
+              it's a key and an optional value.
+    """
+    async with KVSClient(ctx.obj["service_url"]) as client:
+        for key in v.keys():
+            res = await query_func(client, v[key])
+            if res.error:
+                click.echo(f"failed with status: {res.status}, \
+                   error: {res.error.strip()}, url: {res.url}")
+                continue
+            click.echo(res.result)
 
-def _click_echo_if_error(result: BaseResult, /) -> bool:
+
+def _handle_results(results: list[_ResultT], /) -> None:
     """Print an error message to the stdout.
 
-    :param result: 
-    :return true if has error, false otherwise.
+    :param results: 
     """
-    has_error: bool = (result.error != None)
-    if has_error:
-        click.echo(f"failed with status: {result.status}, \
-                   error: {result.error.strip()}, url: {result.url}")
-    return has_error
+    for r in results:
+        if r.error:
+            click.echo(f"failed with status: {r.status}, \
+                error: {r.error.strip()}, url: {r.url}")
+            continue
+        # if r.params:
+        #     click.echo(f"params: {r.params}, result: {r.result}")
+        click.echo(r.result)
+
 
 @click.group()
 @click.option("--service-url", "-u", type=str, default=_KVS_SERVICE_URL, help="KVS service URL.")
@@ -76,15 +76,15 @@ def echo(ctx: click.Context, echo_string: list[str]) -> None:
     :param service_url: url to KVS service.
     :param echo_string: string(s) to be echoed back.
     """
-    async def multi_echo_call(echo_strings: list[str], /) -> None:
+    async def kvs_echo(echo_strings: list[str], /) -> None:
         async with KVSClient(ctx.obj["service_url"]) as client:
-            for echo_str in echo_strings:
-                res: StrResult = await client.echo(echo_str)
-                if _click_echo_if_error(res.base):
-                    continue
-                click.echo(res.result)
+            results: tuple[StrResult] = asyncio.gather(
+                *(asyncio.create_task(client.echo(s)) for s in echo_strings)
+            )
+            _handle_results(results)
 
-    asyncio.run(multi_echo_call(echo_string))
+    asyncio.run(kvs_echo(echo_string))
+
 
 
 @root.command()
@@ -94,14 +94,11 @@ def hello(ctx: click.Context) -> None:
 
     :param ctx: click context.
     """
-    async def hello_call() -> None:
+    async def kvs_hello() -> None:
         async with KVSClient(ctx.obj["service_url"]) as client:
-            res: StrResult = await client.hello()
-            if _click_echo_if_error(res.base):
-                return
-            click.echo(res.result)
+            _handle_results([await client.hello()])
 
-    asyncio.run(hello_call())
+    asyncio.run(kvs_hello())
 
 
 @root.command()
@@ -112,19 +109,16 @@ def fibo(ctx: click.Context, index: list[int]) -> None:
     :param ctx: click context.
     :param index: fibonacci sequence index.
     """
-    async def invoke_fibo_rpc(indices: list[int], /) -> None:
+    async def kvs_fibo(indices: list[int], /) -> None:
         async with KVSClient(ctx.obj["service_url"]) as client:
-            for idx in indices:
-                res: IntResult = await client.fibo(idx)
-                if _click_echo_if_error(res.base):
-                    continue
-                click.echo(res.result)
+            results: tuple[IntResult] = asyncio.gather(
+                *(asyncio.create_task(client.fibo(index)) for index in indices)
+            )
+            _handle_results(results)
 
-    asyncio.run(invoke_fibo_rpc(index))
+    asyncio.run(kvs_fibo(index))
 
 
-# TODO: Try passing multiple values with type specified as a dict
-# NOTE: Click treats negative integers as options 
 @root.command()
 @click.argument("key", type=str)
 @click.argument("value", type=int)
@@ -137,31 +131,30 @@ def int_add(ctx: click.Context, key: str, value: int) -> None:
     :param key: list of keys.
     :param value: list of corresponding values.
     """
-    async def invoke_int_add(key: str, value: int, /) -> None:
+    async def kvs_int_add(key: str, value: int, /) -> None:
         async with KVSClient(ctx.obj["service_url"]) as client:
-            res: BoolResult = await client.int_add(key, value)
-            if _click_echo_if_error(res.base):
-                return
-            click.echo(f"status: {res.base.status}")
+            _handle_results([await client.int_add(key, value)])
 
-    asyncio.run(invoke_int_add(key, value))
+    asyncio.run(kvs_int_add(key, value))
 
 
 @root.command()
 @click.argument("key", type=str, nargs=-1)
 @click.pass_context
 def int_get(ctx: click.Context, key: list[str]) -> None:
-    """_summary_
     """
-    async def invoke_int_get(keys: list[str], /) -> None:
-        async with KVSClient(ctx.obj["service_url"]) as client:
-            for key in keys:
-                res: IntResult = await client.int_get(key)
-                if _click_echo_if_error(res.base):
-                    continue
-                click.echo(f"{key}:{res.result}")
 
-    asyncio.run(invoke_int_get(key))
+    :param ctx:
+    :param key:
+    """
+    async def kvs_int_get(keys: list[str], /) -> None:
+        async with KVSClient(ctx.obj["service_url"]) as client:
+            results: tuple[IntResult] = asyncio.gather(
+                *(asyncio.create_task(client.int_get(k)) for k in keys)
+            )
+            _handle_results(results)
+
+    asyncio.run(kvs_int_get(key))
 
 
 @root.command()
@@ -175,30 +168,29 @@ def int_del(ctx: click.Context, key: list[str]) -> None:
     """
     async def kvs_int_del(keys: list[str], /) -> None:
         async with KVSClient(ctx.obj["service_url"]) as client:
-            for key in keys:
-                res: IntResult = await client.int_del(key)
-                if _click_echo_if_error(res.base):
-                    continue
-                click.echo(f"key: {key}, deleted: {res.result}")
+            results: tuple[BoolResult] = asyncio.gather(
+                *(asyncio.create_task(client.int_del(k)) for k in keys)
+            ) 
+            _handle_results(results)
 
     asyncio.run(kvs_int_del(key))
 
 
 @root.command()
-@click.argument("key", type=str) # Support multiple keys?
+@click.argument("key", type=str, nargs=-1)
 @click.pass_context
-def incr(ctx: click.Context, key: str) -> None:
+def incr(ctx: click.Context, key: list[str]) -> None:
     """Increment the value reffered by the following key by one.
     
     :param ctx: click context containing service url.
     :param key: key of the value to be incremented.
     """
-    async def kvs_incr(key: str, /) -> None:
+    async def kvs_incr(keys: list[str], /) -> None:
         async with KVSClient(ctx.obj["service_url"]) as client:
-            res: IntResult = await client.incr(key)
-            if _click_echo_if_error(res.base):
-                return
-            click.echo(res.result)
+            results: tuple[IntResult] = asyncio.gather(
+                *(asyncio.create_task(client.incr(k)) for k in keys)
+            )
+            _handle_results(results)
 
     asyncio.run(kvs_incr(key))
 
@@ -210,18 +202,15 @@ def incr(ctx: click.Context, key: str) -> None:
 def incr_by(ctx: click.Context, key: str, value: int) -> None:
     """Increment the value reffered by the following key by `value`.
     If `value` is negative, the final value will be decremented.
-    
+
     :param ctx: click context containing service url.
     :param key: 
     :param value:
     """
     async def kvs_incr_by(key: str, value: int, /) -> None:
         async with KVSClient(ctx.obj["service_url"]) as client:
-            res: IntResult = await client.incr_by(key, value)
-            if _click_echo_if_error(res.base):
-                return
-            click.echo(res.result)
-    
+            _handle_results([await client.incr_by(key, value)])
+
     asyncio.run(kvs_incr_by(key, value))
 
 
@@ -238,10 +227,7 @@ def float_add(ctx: click.Context, key: str, value: float) -> None:
     """
     async def kvs_float_add(key: str, value: int, /) -> None:
         async with KVSClient(ctx.obj["service_url"]) as client:
-            res: FloatResult = await client.float_add(key, value)
-            if _click_echo_if_error(res.base):
-                return
-            click.echo(res.base.status) # Use result instead?
+            _handle_results(await client.float_add(key, value))
 
     asyncio.run(kvs_float_add(key, value))
 
@@ -258,11 +244,10 @@ def float_get(ctx: click.Context, key: list[str]) -> None:
     """
     async def kvs_float_get(keys: list[str], /) -> None:
         async with KVSClient(ctx.obj["service_url"]) as client:
-            for key in keys: 
-                res: FloatResult = await client.float_get(key)
-                if _click_echo_if_error(res.base):
-                    return
-                click.echo(res.result)
+            results: tuple[FloatResult] = asyncio.gather(
+                *(asyncio.create_task(client.float_get(k)) for k in keys)
+            )
+            _handle_results(results)
 
     asyncio.run(kvs_float_get(key))
 
@@ -278,11 +263,10 @@ def float_del(ctx: click.Context, key: list[str]) -> None:
     """
     async def kvs_float_del(keys: list[str], /) -> None:
         async with KVSClient(ctx.obj["service_url"]) as client:
-            for key in keys:
-                res: BoolResult = await client.float_del(key)
-                if _click_echo_if_error(res.base):
-                    continue
-                click.echo(f"key: {key}, deleted: {res.result}")
+            results: tuple[BoolResult] = asyncio.gather(
+                *(asyncio.create_task(client.float_get(k)) for k in keys)
+            )
+            _handle_results(results)
 
     asyncio.run(kvs_float_del(key))
 
@@ -305,3 +289,19 @@ def float_del(ctx: click.Context, key: list[str]) -> None:
 #             click.echo(res.result)
 
 #     asyncio.run(kvs_dict_add(key, value))
+
+# NOTE: Adding multiple strings at a time should be established with str_set_add command?
+# But the go server doesn't support it currently 
+@root.command
+@click.argument("key", type=str)
+@click.pass_context
+def str_add(ctx: click.Context, key: str) -> None:
+    """_summary_
+
+    :param ctx:
+    """
+    async def kvs_str_add(key: str, /) -> None:
+        async with KVSClient(ctx.obj["service_url"]) as client:
+            _handle_results(await client.str_add(key))
+
+    asyncio.run(kvs_str_add(key))
