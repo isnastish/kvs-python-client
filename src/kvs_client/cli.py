@@ -100,13 +100,14 @@ def fibo(index: list[int]) -> None:
 
     :param index: list of fibonacci sequence indices to be computed.
     """
+    # TODO: Use asyncio.wait_for() instead?
     async def cancellable_fibo(client: KVSClient, n: int, /) -> None:
         task = asyncio.create_task(client.fibo(n))
         time_elapsed = 0
         while not task.done():
             time_elapsed += 0.25
             await asyncio.sleep(0.25)
-            if time_elapsed == 10: # seconds elapsed
+            if time_elapsed >= 10: # seconds elapsed
                 task.cancel()
         try:
             _handle_results(await task)
