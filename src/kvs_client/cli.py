@@ -1,7 +1,9 @@
-import click
+import logging
 import asyncio
 import typing as t
 from functools import wraps
+
+import click
 from aiohttp import ServerDisconnectedError
 
 from .client import KVSClient
@@ -12,6 +14,8 @@ from .result import (
     FloatResult, 
     DictResult,
 )
+
+_logger = logging.getLogger(__name__)
 
 _ResultT: t.TypeAlias = t.Union[FloatResult|IntResult|BoolResult|StrResult|DictResult]
 
@@ -96,12 +100,26 @@ def fibo(index: list[int]) -> None:
 
     :param index: list of fibonacci sequence indices to be computed.
     """
+    async def cancellable_fibo(client: KVSClient, n: int, /) -> None:
+        task = asyncio.create_task(client.fibo(n))
+        time_elapsed = 0
+        while not task.done():
+            time_elapsed += 0.25
+            await asyncio.sleep(0.25)
+            if time_elapsed == 10: # seconds elapsed
+                task.cancel()
+        try:
+            _handle_results(await task)
+        except asyncio.CancelledError:
+            click.echo(f"Task fibo({n}) was canceled, elapsed time {time_elapsed}")
+
     @_with_handled_server_exceptions
     async def kvs_fibo(indices: list[int], /) -> None:
         async with KVSClient() as client:
-            _handle_results(await asyncio.gather(
-                *(asyncio.create_task(client.fibo(index)) for index in indices)
-            ))
+            await asyncio.gather(
+                *(asyncio.create_task(cancellable_fibo(client, n)) for n in indices)
+            )
+
     asyncio.run(kvs_fibo(index))
 
 
@@ -262,9 +280,61 @@ def str_get(key: list[str]) -> None:
 
     :param ctx:
     """
-    async def kvs_str_add(keys: list[str], /) -> None:
+    @_with_handled_server_exceptions
+    async def kvs_str_get(keys: list[str], /) -> None:
         async with KVSClient() as client:
             _handle_results(await asyncio.gather(
                 *(asyncio.create_task(client.str_get(k)) for k in keys)
             ))
-    asyncio.run(kvs_str_add(key))
+    asyncio.run(kvs_str_get(key))
+
+
+@root.command
+@click.argument("key", type=str)
+@click.argument("pairs", type=str, nargs=-1)
+def dict_put(key: str, pairs: list[str]) -> None:
+    """Put dictionary into the dict remote storage.
+
+    :param key: key to be inserted.
+    :param pairs: colon-separated list of key-value strings.
+            Example: "participant_name":"Jacob" 
+    """
+    @_with_handled_server_exceptions
+    async def kvs_dict_put(key: str, value: dict[str, str], /) -> None:
+        async with KVSClient() as client:
+            _handle_results(await client.dict_put(key, value))
+    
+    # extract key-value pairs and make a dict out of them.
+    value = dict(map(lambda p: tuple(p.split("=", maxsplit=1)), pairs))
+
+    asyncio.run(kvs_dict_put(key, value))
+
+
+@root.command
+@click.argument("key", type=str, nargs=-1)
+def dict_get(key: list[str]) -> None:
+    """Get dictionary form the dict remote storage.
+
+    :param key: key(s) holding a dictionary in a remote storage.
+    """
+    @_with_handled_server_exceptions
+    async def kvs_dict_get(keys: list[str], /) -> None:
+        async with KVSClient() as client:
+            _handle_results(await asyncio.gather(
+                *(asyncio.create_task(client.dict_get(k)) for k in keys))
+            )
+    asyncio.run(kvs_dict_get(key))
+
+
+@root.command
+@click.argument("key", type=str, nargs=-1)
+def dict_del(key: list[str]) -> None:
+    """Delete dictionary form the dict remote storage.
+
+    :param key: key(s) to be deleted.
+    """
+    @_with_handled_server_exceptions
+    async def kvs_dict_del(keys: list[str], /) -> None:
+        async with KVSClient() as client:
+            _handle_results(await client.dict_del(key))
+    asyncio.run(kvs_dict_del(key))
