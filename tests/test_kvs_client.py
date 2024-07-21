@@ -1,13 +1,16 @@
-from http import HTTPStatus
+import asyncio
+import random
+import string
+import itertools 
 from contextlib import AsyncExitStack
 from unittest import IsolatedAsyncioTestCase
 
-from src.kvs_client.client import (
-    KVSClient, 
+from src.kvs_client.client import KVSClient 
+from src.kvs_client.result import (
     BoolResult, 
-    IntResult,
+    IntResult, 
     StrResult, 
-    FloatResult, 
+    FloatResult,
     DictResult
 )
 
@@ -35,28 +38,83 @@ class KVSClientTest(IsolatedAsyncioTestCase):
 
     async def asyncTearDown(self) -> None:
         await self.exit_stack.aclose()
-    
-    # async def test_store_integers(self) -> None:
-    #     """Test store integers in a remote storage"""
-    #     key: str = "number"
-    #     value: int = 999997
-        
-    #     res: BoolResult = await self.kvs_client.int_add(key)
-    #     self.assertEqual(res.error, None)
-    #     self.assertEqual(res.status_code, HTTPStatus.OK)
-        
-    #     res: IntResult = await self.kvs_client.int_get(key)
-    #     self.assertEqual(res.error, None)
-    #     self.assertEqual(res.status_code, HTTPStatus.OK)
-    #     self.assertEqual(res.result, value)
 
-    #     res: BoolResult = await self.kvs_client.int_del(key)
-    #     self.assertEqual(res.error, None)
-    #     self.assertTrue(res.result) # True if the value was deleted, False otherwise
+    async def test_remote_procedural_calls(self) -> None:
+        """Test remote procedural calls (echo/hello/fibo)"""
+        def echo(s: str) -> str:
+            """Convert lowercase leter to uppercase and vice-versa"""
+            res = map(lambda c: c.lower() if c.isupper() else c.upper(), s)
+            return "".join(res)
         
-    #     # Make sure that the value doesn't exist
-    #     res: BoolResult = await self.kvs_client.int_get(key)
-    #     self.assertNotEqual(res.error, None)
-    
+        echo_str: str = "ECHO ECHo ECho Echo echo echO ecHO eCHO ECHO"
+        res: StrResult = await self.kvs_client.echo(echo_str)
+        self.assertEqual(res.error, None)
+        self.assertEqual(res.status, 200)
+        self.assertEqual(res.result, echo(echo_str))
+        
+        res = await self.kvs_client.hello()
+        self.assertEqual(res.error, None)
+        self.assertEqual(res.status, 200)
+        self.assertTrue(res.result)
+
+        # fibo sequence of the first 10 digits
+        expected = [0, 1, 1, 2, 3, 5, 8, 13, 21, 34]
+        res: tuple[IntResult] = await asyncio.gather(
+            *(asyncio.create_task(self.kvs_client.fibo(i)) for i in range(10))
+        )
+        self.assertEqual(expected, [r.result for r in res])
+
+
+    async def test_integer_storage(self) -> None:
+        """Test store integers in a remote storage"""
+        key: str = "number"
+        value: int = 999997
+        
+        res: BoolResult = await self.kvs_client.int_put(key, value)
+        self.assertEqual(res.error, None)
+        self.assertEqual(res.status, 200)
+
+        res: IntResult = await self.kvs_client.int_get(key)
+        self.assertEqual(res.error, None)
+        self.assertEqual(res.status, 200)
+        self.assertEqual(res.result, value)
+
+        res: BoolResult = await self.kvs_client.int_del(key)
+        self.assertEqual(res.error, None)
+        self.assertTrue(res.result)
+        
+        # Make sure that the value doesn't exist
+        res: BoolResult = await self.kvs_client.int_get(key)
+        self.assertNotEqual(res.error, None)
+
+        # generate key-value pairs, in total 5040 pairs will be generated, which is a factorial of 7!
+        keys = ["".join(i) for i in itertools.permutations("abcdefg", 7)]
+        values = [random.randrange(-10000, 10000, 2) for _ in range(0, len(keys))]
+        pairs = list(zip(keys, values, strict=True))
+
+        REQUEST_LIMIT = 2
+
+        results: tuple[BoolResult] = await asyncio.gather(
+            *(asyncio.create_task(self.kvs_client.int_put(p[0], p[1])) for p in pairs[:REQUEST_LIMIT])
+        )
+        
+        results: tuple[IntResult] = await asyncio.gather(
+            *(asyncio.create_task(self.kvs_client.int_get(p[0])) for p in pairs[:REQUEST_LIMIT]),
+        )
+        
+        self.assertEqual([r.result for r in results], [p[1] for p in pairs[:REQUEST_LIMIT]])
+
+
+    async def test_floats_roundtrip(self) -> None:
+        """"""
+
     # async def test_store_strings(self) -> None:
     #     """Test store strings in a remote storage"""
+    #     key = "str_key"
+    #     value = "".join(random.choices(string.hexdigits, k=4096))
+        
+    #     print(value)
+    #     res: StrResult = await self.kvs_client.str_add(key, value)
+    #     self.assertEqual(res.error, None)
+    #     self.assertEqual(res.status, 200)
+    #     self.assertEqual(res.result, value)
