@@ -1,5 +1,6 @@
 import os
 import logging
+import json
 import asyncio
 import typing as t
 from types import TracebackType 
@@ -75,7 +76,7 @@ class KVSClient:
         self._exit_stack = AsyncExitStack()
         self._client = await self._exit_stack.enter_async_context(
             ClientSession(
-                timeout=ClientTimeout(total=20),
+                timeout=ClientTimeout(total=100),
                 trace_configs=[create_trace_config()], 
                 headers=self._defaut_headers,
                 # connector=self._tcp_connector,
@@ -386,23 +387,86 @@ class KVSClient:
                 and an error member will contain an error message, if any.
         """
         res: BoolResult
-        async with self._client.get(self._base_url / f"str-del/{key}") as r:
+        async with self._client.delete(self._base_url / f"str-del/{key}") as r:
             res = BoolResult(status=r.status, url=r.url, params=(key))
             if not r.ok: res.error = await r.text()
-            else: res.result = await r.text()
+            else: 
+                if r.headers.get("Deleted"):
+                    res.result = True
         return res
 
 
-    async def dict_put() -> DictResult:
-        """"""
+    async def dict_put_d(self, kv_pair: dict[str, dict[str, str]], /) -> BoolResult:
+        """Put map int the remote map storage.
+
+        :param kv_pair: dictionary containing a key and a value (nested dictionary) to be inserted. 
+        :returns: BoolResult holding the result of operation. See `dict_put`.
+        :raises KeyError: if the dictionary is empty.
+        """
+        key, value = kv_pair.popitem()
+        return await self.dict_put(key, value)
+
+
+    async def dict_put(self, key: str, value: dict[str, str], /) -> BoolResult:
+        """Put map into the remote map storage with the following key.
+        
+        :param key: a new key to be inserted. If the key already exists
+                it will be updated with a new map value.
+        :param value: a new map value.
+        :returns: BoolResult with result member set to true if the operation succeeded. 
+                Otherwise the status member will contain the response status, 
+                and the error member will contain the error message, if any.
+        :raises TypeError: if dictionary contains non-pod keys.
+        """
+        obj = json.dumps(obj=value, skipkeys=True)
+        _logger.info("Serialized object %s", obj)
+        
+        res: BoolResult
+        async with self._client.put(
+            self._base_url / f"map-put/{key}", 
+            data=obj, 
+            headers={"content-length": f"{len(obj)}"}
+        ) as r:
+            res = BoolResult(status=r.status, url=r.url, params=(key, value))
+            if not r.ok: res.error = await r.text()
+            else: res.result = (r.status == 200)
+        return res
 
 
     async def dict_get(self, key: str, /) -> DictResult:
-        """"""
+        """Get map from the remote map storage with the following key.
+
+        :param key: key referencing a map in the remote storage.
+        :returns: DictResult containing a map in its result member if succeeded.
+                Otherwise check the status and the error members.
+        :raises JSONDecodeError: If the response contains invalid json.
+        """
+        res: DictResult
+        async with self._client.get(self._base_url / f"map-get/{key}") as r:
+            res = DictResult(status=r.status, url=r.url, params=(key))
+            if not r.ok: res.error = await r.text()
+            else: 
+                d = json.loads(s=await r.read())
+                _logger.info("Deserialized object %s", d)
+                res.result = d
+        return res
 
 
     async def dict_del(self, key: str, /) -> BoolResult:
-        """"""
+        """Delete map from the remote storage with the following key.
+        
+        :param key: key to be deleted.
+        :returns: BoolResult with result member set to true if the key was deleted.
+                Otherwise check the status and the error members.
+        """
+        res: BoolResult
+        async with self._client.delete(self._base_url / f"map-del/{key}") as r:
+            res = BoolResult(status=r.status, url=r.url, params=(key))
+            if not r.ok: res.error = await r.text()
+            else: 
+                if r.headers.get("Deleted"):
+                    res.result = True
+        return res
 
 
     # async def _make_http_request(

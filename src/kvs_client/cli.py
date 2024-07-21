@@ -337,5 +337,7 @@ def dict_del(key: list[str]) -> None:
     @_with_handled_server_exceptions
     async def kvs_dict_del(keys: list[str], /) -> None:
         async with KVSClient() as client:
-            _handle_results(await client.dict_del(key))
+            _handle_results(await asyncio.gather(
+                *(asyncio.create_task(client.dict_del(k)) for k in keys)
+            ))
     asyncio.run(kvs_dict_del(key))
