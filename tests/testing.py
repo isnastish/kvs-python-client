@@ -29,7 +29,6 @@ def start_kvs_docker_container(port: int=4040) -> tuple[subprocess.Popen, str]:
     :returns
     """
     # Keep forgetting that it's HOST_PORT:CONTAINER_PORT so leaving the comment here...
-    # run waits for a command to complete, which is not what we need
     process = subprocess.Popen(
         ["docker", "run", "--rm", "--name", 
          "kvs-service-emulator", "-p", f"{port}:8080", _KVS_SERVICE_IMAGE],
@@ -52,6 +51,6 @@ def kill_kvs_docker_container(process: subprocess.Popen) -> None:
     """
     _logger.info("killing docker container")
     if ret_code := subprocess.call(["docker", "rm", "--force", "kvs-service-emulator"]) != 0:
-        _logger.error("failed to kill docker container")
+        _logger.error("failed to kill docker container, status %s", ret_code)
         
     process.kill()
