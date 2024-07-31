@@ -2,6 +2,9 @@ import subprocess
 import logging
 import time
 
+# TODO: This all has to be replaced with docker-compose, since kvs-service depends on other services, 
+# as well as postgresql database, which cannot be run docker-in-docker. 
+
 # NOTE: The image has to be available locally, it won't be pulled out from the registry, 
 # so if running the tests for the first time, the docker image containing kvs service should be built
 _KVS_SERVICE_IMAGE = "kvs:latest"
