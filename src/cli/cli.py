@@ -6,8 +6,8 @@ from functools import wraps
 import click
 from aiohttp import ServerDisconnectedError
 
-from .client import KVSClient
-from .result import (
+from src.kvs.client import Client
+from src.kvs.result import (
     StrResult, 
     IntResult, 
     BoolResult, 
@@ -15,7 +15,6 @@ from .result import (
     DictResult,
 )
 
-_logger = logging.getLogger(__name__)
 
 _ResultT: t.TypeAlias = t.Union[FloatResult|IntResult|BoolResult|StrResult|DictResult]
 
@@ -74,7 +73,7 @@ def echo(string: list[str]) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_echo(strings: list[str], /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await asyncio.gather(
                 *(asyncio.create_task(client.echo(s)) for s in strings)
             ))
@@ -87,7 +86,7 @@ def hello() -> None:
     Mainly used to test the connection and doesn't modify storage state"""
     @_with_handled_server_exceptions
     async def kvs_hello() -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await client.hello())
 
     asyncio.run(kvs_hello())
@@ -101,7 +100,7 @@ def fibo(index: list[int]) -> None:
     :param index: list of fibonacci sequence indices to be computed.
     """
     # TODO: Use asyncio.wait_for() instead?
-    async def cancellable_fibo(client: KVSClient, n: int, /) -> None:
+    async def cancellable_fibo(client: Client, n: int, /) -> None:
         task = asyncio.create_task(client.fibo(n))
         time_elapsed = 0
         while not task.done():
@@ -116,7 +115,7 @@ def fibo(index: list[int]) -> None:
 
     @_with_handled_server_exceptions
     async def kvs_fibo(indices: list[int], /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             await asyncio.gather(
                 *(asyncio.create_task(cancellable_fibo(client, n)) for n in indices)
             )
@@ -135,7 +134,7 @@ def int_put(key: str, value: int) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_int_add(key: str, value: int, /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await client.int_put_d({key: value}))
     asyncio.run(kvs_int_add(key, value))
 
@@ -149,7 +148,7 @@ def int_get(key: list[str]) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_int_get(keys: list[str], /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await asyncio.gather(
                 *(asyncio.create_task(client.int_get(k)) for k in keys)
             ))
@@ -165,7 +164,7 @@ def int_del(key: list[str]) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_int_del(keys: list[str], /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             try: 
                 _handle_results(await asyncio.gather(
                     *(asyncio.create_task(client.int_del(k)) for k in keys)
@@ -185,7 +184,7 @@ def int_incr(key: list[str]) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_incr(keys: list[str], /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await asyncio.gather(
                 *(asyncio.create_task(client.incr(k)) for k in keys)
             ))
@@ -204,7 +203,7 @@ def int_incr_by(key: str, value: int) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_incr_by(key: str, value: int, /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await client.incr_by(key, value))
     asyncio.run(kvs_incr_by(key, value))
 
@@ -220,7 +219,7 @@ def float_put(key: str, value: float) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_float_put(key: str, value: int, /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await client.float_put(key, value))
     asyncio.run(kvs_float_put(key, value))
 
@@ -236,7 +235,7 @@ def float_get(key: list[str]) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_float_get(keys: list[str], /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await asyncio.gather(
                 *(asyncio.create_task(client.float_get(k)) for k in keys)
             ))
@@ -253,7 +252,7 @@ def float_del(key: list[str]) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_float_del(keys: list[str], /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await asyncio.gather(
                 *(asyncio.create_task(client.float_del(k)) for k in keys)
             ))
@@ -269,7 +268,7 @@ def str_put(key: str, value: str) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_str_put(key: str, value: str, /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await client.str_put(key, value))
     asyncio.run(kvs_str_put(key, value))
 
@@ -283,7 +282,7 @@ def str_get(key: list[str]) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_str_get(keys: list[str], /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await asyncio.gather(
                 *(asyncio.create_task(client.str_get(k)) for k in keys)
             ))
@@ -302,7 +301,7 @@ def dict_put(key: str, pairs: list[str]) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_dict_put(key: str, value: dict[str, str], /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await client.dict_put(key, value))
     
     # extract key-value pairs and make a dict out of them.
@@ -320,7 +319,7 @@ def dict_get(key: list[str]) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_dict_get(keys: list[str], /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await asyncio.gather(
                 *(asyncio.create_task(client.dict_get(k)) for k in keys))
             )
@@ -336,7 +335,7 @@ def dict_del(key: list[str]) -> None:
     """
     @_with_handled_server_exceptions
     async def kvs_dict_del(keys: list[str], /) -> None:
-        async with KVSClient() as client:
+        async with Client() as client:
             _handle_results(await asyncio.gather(
                 *(asyncio.create_task(client.dict_del(k)) for k in keys)
             ))

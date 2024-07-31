@@ -5,8 +5,8 @@ import itertools
 from contextlib import AsyncExitStack
 from unittest import IsolatedAsyncioTestCase
 
-from src.kvs_client.client import KVSClient 
-from src.kvs_client.result import (
+from src.kvs.client import Client 
+from src.kvs.result import (
     BoolResult, 
     IntResult, 
     StrResult, 
@@ -19,21 +19,30 @@ from .testing import (
     kill_kvs_docker_container, 
 )
 
+# If URL is provide, all the tests are executed against the service pointed by url, 
+# otherwise against the service run inside a mock docker container.
+_KVS_SERVICE_URL = ""
+
+
 class KVSClientTest(IsolatedAsyncioTestCase):
     @classmethod
     def setUpClass(cls) -> None:
         """Start up a docker container running kvs service"""
-        cls.service_process, cls.service_url = start_kvs_docker_container()
+        if _KVS_SERVICE_URL:
+            cls.service_url = _KVS_SERVICE_URL
+        else:
+            cls.service_process, cls.service_url = start_kvs_docker_container()
 
     @classmethod
     def tearDownClass(cls) -> None:
         """Tear down the docker container if it was started without any issues"""
-        kill_kvs_docker_container(cls.service_process)
+        if not _KVS_SERVICE_URL:
+            kill_kvs_docker_container(cls.service_process)
 
     async def asyncSetUp(self) -> None:
         self.exit_stack = AsyncExitStack()
         self.kvs_client = await self.exit_stack.enter_async_context(
-            KVSClient(self.service_url)
+            Client(self.service_url)
         )
 
     async def asyncTearDown(self) -> None:

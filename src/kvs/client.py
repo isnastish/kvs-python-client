@@ -6,45 +6,28 @@ import typing as t
 from types import TracebackType 
 from functools import cache
 from contextlib import AsyncExitStack
-from http import HTTPStatus
 from yarl import URL
-from enum import IntEnum
 from aiohttp import (
     ClientSession, 
-    ClientConnectionError, 
-    ClientOSError, 
-    ClientResponse, 
     ClientTimeout,
     TCPConnector, 
-    ServerDisconnectedError,
 )
 from opentelemetry.instrumentation.aiohttp_client import create_trace_config
 
-from .result import *
+from .result import (
+    StrResult, 
+    IntResult,
+    BoolResult,
+    FloatResult,
+    DictResult
+)
 
 _KVS_SERVICE_URL = os.getenv("KVS_SERVICE_URL", "http://localhost:8080")
 
 _logger = logging.getLogger(__name__)
 
-class HttpMethod(IntEnum):
-    GET = 1
-    POST = 2
-    PUT = 3
-    PATCH = 4
-    HEAD = 5
-    DELETE = 6
 
-
-_HTTP_RETRY_STATUSES = [
-    HTTPStatus.BAD_GATEWAY,
-    HTTPStatus.TOO_MANY_REQUESTS,
-    HTTPStatus.TOO_EARLY,
-    HTTPStatus.GATEWAY_TIMEOUT,
-    HTTPStatus.REQUEST_TIMEOUT,
-    HTTPStatus.SERVICE_UNAVAILABLE,
-]
-
-class KVSClient:
+class Client:
     _defaut_headers = {"user-agent": "kvs-client"}
     _service_name = "kvs"
     _service_version = "v1.0.0"
@@ -72,7 +55,7 @@ class KVSClient:
         pass
 
 
-    async def __aenter__(self) -> "KVSClient":
+    async def __aenter__(self) -> "Client":
         self._exit_stack = AsyncExitStack()
         self._client = await self._exit_stack.enter_async_context(
             ClientSession(
@@ -423,8 +406,8 @@ class KVSClient:
         
         res: BoolResult
         async with self._client.put(
-            self._base_url / f"map-put/{key}", 
-            data=obj, 
+            self._base_url / f"map-put/{key}",
+            data=obj,
             headers={"content-length": f"{len(obj)}"}
         ) as r:
             res = BoolResult(status=r.status, url=r.url, params=(key, value))
@@ -467,61 +450,3 @@ class KVSClient:
                 if r.headers.get("Deleted"):
                     res.result = True
         return res
-
-
-    # async def _make_http_request(
-    #     self, url: URL, method: HttpMethod, headers: t.Optional[dict[str, str]] = None
-    # ) -> ClientResponse:
-    #     # TODO: Instead of iterating over each method, pass client.get/post/delete/put function directly
-    #     # as a callable object. The only problem in that case would be that we won't be able to see the function signature
-    #     retry_attempt = 0
-    #     resp: ClientResponse
-    #     while retry_attempt <= self._retries_count:
-    #         # TODO: Increment the sleep count gradually
-    #         retry_attempt += 1
-    #         try:
-    #             match method:
-    #                 case HttpMethod.GET:
-    #                     resp = await self._client.get(url, headers=headers)
-                        
-    #                 case HttpMethod.POST:
-    #                     resp = await self._client.post(url, headers=headers)
-
-    #                 case HttpMethod.PUT:
-    #                     resp = await self._client.put(url, headers=headers)
-
-    #                 case HttpMethod.HEAD:
-    #                     resp = await self._client.head(url, headers=headers)
-                    
-    #                 case HttpMethod.DELETE:
-    #                     resp = await self._client.head(url, headers=headers)
-
-    #             if resp.status not in _HTTP_RETRY_STATUSES:
-    #                 return resp
-                
-    #         # Handle possible low-level connections problems
-    #         except (ClientConnectionError, ClientOSError) as e:
-    #             if retry_attempt > self._retries_count:
-    #                 raise
-    #             # _log.error("Connection failure, retry attempt %i", retry_attempt)
-    #         except ServerDisconnectedError as e:
-    #             # TODO: Handler server disconnected error
-    #             raise
-
-    #         if retry_attempt <= self._retries_count:
-    #             # _log.info("Attempt %s failed, retrying in %ss", self._delay)
-    #             await asyncio.sleep(self._delay)
-
-    #     # Do we want to throw an exception if we run out of retries?
-    #     return resp
-
- 
-# class Batch:
-#     _int_batch: tuple[str, int] = ()
-    
-#     def int_put() -> None:
-#         """"""
-
-#     def int_put_d(self, pairs: dict[str, int], /) -> None:
-#         """"""
-#         list(zip(pairs.keys(), pairs.values(), strict=True))
