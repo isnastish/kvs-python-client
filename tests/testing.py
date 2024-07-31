@@ -30,7 +30,7 @@ def start_kvs_docker_container(port: int=4040) -> tuple[subprocess.Popen, str]:
     """
     # Keep forgetting that it's HOST_PORT:CONTAINER_PORT so leaving the comment here...
     process = subprocess.Popen(
-        ["docker", "run", "--rm", "--name", 
+        ["docker", "run", "--rm", "--name",
          "kvs-service-emulator", "-p", f"{port}:8080", _KVS_SERVICE_IMAGE],
         stdout=subprocess.PIPE,
     )
