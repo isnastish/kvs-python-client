@@ -4,8 +4,8 @@ Python client to interact with the key-value storage service. The client relies 
 ### Set up
 Clone the git repository and open it in your favourite editor. Specify an URL to your KVS service inside `.env` file as the following `KVS_SERVICE_URL="http://url-to-your-service"`. Follow this instruction on how to [run the service inside a docker container](https://github.com/isnastish/kvs?tab=readme-ov-file#running-kvs-service-in-a-docker-container). Install all the packages specified in `Pipfile.lock` by running `pipenv sync` and spawn a shell within the virtual environment with `pipenv shell`. Note that [pipenv](https://pipenv.pypa.io/en/latest/) tool is required.
 
-### Using KVSClient
-Once everything is set up and the service is running, the following code snippet shows how to test the connection using the `KVSClient` and `echo` rpc.
+### Using KVS Client
+Once everything is set up and the service is running, the following code snippet shows how to test the connection using the `Client` and `echo` rpc.
 ```py
 import asyncio
 
@@ -53,11 +53,11 @@ asyncio.run(store_dict("my_dict", {"key_1": "value_1", "key_2": "799879", "key_3
 ```
 
 ### Using the cli
-For interacting with the service from command line I use [click](https://click.palletsprojects.com/en/8.1.x/) python tool. It's the most convenient way for testing the service, as it doesn't require writing any code at all. Assuming the click has been installed, the followinag command would generate the same result as the `echo` rpc: `python -m src.kvs echo ello HELO olloO allo`. For bravity, all the exceptions coming from the client are caught to avoid having big stack traces from executing commands, instead error messages are displayed. Note that the behaviour is different when using `KVSClient` directly.
+For interacting with the service from command line I use [click](https://click.palletsprojects.com/en/8.1.x/) python tool. It's the most convenient way for testing the service, as it doesn't require writing any code at all. Assuming the click has been installed, the followinag command would generate the same result as the `echo` rpc: `python -m kvs.cli echo ello HELO olloO allo`. For bravity, all the exceptions coming from the client are caught to avoid having big stack traces from executing commands, instead error messages are displayed. Note that the behaviour is different when using the `Client` directly.
 
-To store key-value pairs inside the remote storage use the following command `python -m src.kvs dict_put "my_dict" key_1=value_1 key_2=799879 key_3=0xffffaa`. It is equivalent to `client.dict_put(key, value)` mentioned in the code sample above.
+To store key-value pairs inside the remote storage use the following command `python -m kvs.cli dict_put "my_dict" key_1=value_1 key_2=799879 key_3=0xffffaa`. It is equivalent to `client.dict_put(key, value)` mentioned in the code sample above.
 
-## Result types
+## Result data types
 Each api function call returns a result of a particular type. For delete operations, the result type is `BoolResult`
 with `result` field set to true if the specified key was deleted, false otherwise. For get methods, the type varies depending on the api function, for example `str_get` will return a result of type `StrResult`, containing the requested string if a request has succeeded.
 All the result types are represented as python dataclasses and have the following shape:

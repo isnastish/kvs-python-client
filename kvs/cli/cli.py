@@ -6,8 +6,8 @@ from functools import wraps
 import click
 from aiohttp import ServerDisconnectedError
 
-from src.kvs.client import Client
-from src.kvs.result import (
+from kvs.client import Client
+from kvs.results import (
     StrResult, 
     IntResult, 
     BoolResult, 

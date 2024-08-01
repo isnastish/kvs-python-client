@@ -5,8 +5,8 @@ import base64
 from contextlib import AsyncExitStack
 from unittest import IsolatedAsyncioTestCase
 
-from src.kvs.client import Client 
-from src.kvs.result import (
+from kvs.client import Client 
+from kvs.results import (
     BoolResult, 
     IntResult, 
     StrResult, 

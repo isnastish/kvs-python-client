@@ -14,7 +14,7 @@ from aiohttp import (
 )
 from opentelemetry.instrumentation.aiohttp_client import create_trace_config
 
-from .result import (
+from .results import (
     StrResult, 
     IntResult,
     BoolResult,
