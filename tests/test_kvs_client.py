@@ -78,21 +78,21 @@ class KVSClientTest(IsolatedAsyncioTestCase):
         key: str = "number"
         value: int = 999997
         
-        res: BoolResult = await self.client.int_put(key, value)
+        res: IntResult = await self.client.int_put(key, value)
         self.assertEqual(res.error, None)
-        self.assertEqual(res.status, 200)
+        self.assertEqual(res.result, 200)
 
-        res: IntResult = await self.client.int_get(key)
+        res = await self.client.int_get(key)
         self.assertEqual(res.error, None)
         self.assertEqual(res.status, 200)
         self.assertEqual(res.result, value)
 
-        res: BoolResult = await self.client.int_del(key)
-        self.assertEqual(res.error, None)
-        self.assertTrue(res.result)
+        delRes: BoolResult = await self.client.int_del(key)
+        self.assertEqual(delRes.error, None)
+        self.assertTrue(delRes.result)
         
         # Make sure that the value doesn't exist
-        res: BoolResult = await self.client.int_get(key)
+        res: IntResult = await self.client.int_get(key)
         self.assertEqual(res.status, 404)
 
 
@@ -105,7 +105,7 @@ class KVSClientTest(IsolatedAsyncioTestCase):
 
         REQUEST_LIMIT = 20
 
-        results: tuple[BoolResult] = await asyncio.gather(
+        results: tuple[IntResult] = await asyncio.gather(
             *(asyncio.create_task(self.client.int_put(p[0], p[1])) for p in pairs[:REQUEST_LIMIT])
         )
         
@@ -125,36 +125,47 @@ class KVSClientTest(IsolatedAsyncioTestCase):
             "_key_3": "-789977+str",
         }
         # put dict into the storage
-        res: BoolResult = await self.client.dict_put(key, value)
+        res: IntResult = await self.client.dict_put(key, value)
         self.assertIsNone(res.error)
+        self.assertEqual(res.result, 200)
+
         # get dict from the storage
-        res: DictResult = await self.client.dict_get(key)
-        self.assertIsNone(res.error)
-        self.assertEqual(res.result, value)
+        getRes: DictResult = await self.client.dict_get(key)
+        self.assertIsNone(getRes.error)
+        self.assertEqual(getRes.result, value)
+
         # delete dict from the storage
-        res: BoolResult = await self.client.dict_del(key)
-        self.assertIsNone(res.error)
-        self.assertTrue(res.result)
+        delRes: BoolResult = await self.client.dict_del(key)
+        self.assertIsNone(delRes.error)
+        self.assertTrue(delRes.result)
+        
         # make sure that the key doesn't exist anymore
-        res: BoolResult = await self.client.dict_get(key)
+        res: DictResult = await self.client.dict_get(key)
         self.assertEqual(res.status, 404)
 
 
     async def test_big_dict(self) -> None:
         """Test put big dict into the remote storage"""
         key = "permutations"
-        value = dict(itertools.product(["".join(p) for p in itertools.permutations("abcdef", 6)], 
-                          ["".join(p) for p in itertools.permutations("efghij", 6)]))
+        value = dict(
+            itertools.product(["".join(p) for p in itertools.permutations("abcdef", 6)],
+                ["".join(p) for p in itertools.permutations("efghij", 6)])
+        )
 
-        res: BoolResult = await self.client.dict_put(key, value)
+        res: IntResult = await self.client.dict_put(key, value)
         self.assertIsNone(res.error)
-        # get dict from the storage
-        res: DictResult = await self.client.dict_get(key)
-        self.assertIsNone(res.error)
-        self.assertEqual(res.result, value)
-        # clear the storage
-        res: BoolResult = await self.client.dict_del(key)
-        self.assertTrue(res.result)
+        self.assertEqual(res.result, 200)
+
+        getRes: DictResult = await self.client.dict_get(key)
+        self.assertIsNone(getRes.error)
+        self.assertEqual(getRes.result, value)
+
+        delRes: BoolResult = await self.client.dict_del(key)
+        self.assertTrue(delRes.result)
+        
+        # make sure that the key doesn't exist in a remote storage
+        getRes = await self.client.dict_get(key)
+        self.assertEqual(getRes.status, 404)
 
 
     async def test_float_storage(self) -> None:
@@ -162,19 +173,20 @@ class KVSClientTest(IsolatedAsyncioTestCase):
         key = "_float_key_"
         value = 3.14159
 
-        res: BoolResult = await self.client.float_put(key, value)
+        res: IntResult = await self.client.float_put(key, value)
         self.assertIsNone(res.error)
 
         getRes: FloatResult = await self.client.float_get(key)
-        self.assertIsNone(res.error)
-        self.assertEqual(res.result, value)
+        self.assertIsNone(getRes.error)
+        self.assertEqual(getRes.result, value)
 
-        res: BoolResult = await self.client.float_del(key)
+        res = await self.client.float_del(key)
         self.assertIsNone(res.error)
         self.assertTrue(res.result)
+
         # make sure that the key doesn't exist anymore
-        res: BoolResult = await self.client.float_get(key)
-        self.assertEqual(res.status, 404)
+        getRes = await self.client.float_get(key)
+        self.assertEqual(getRes.status, 404)
 
 
     async def test_str_storage(self) -> None:
@@ -184,12 +196,16 @@ class KVSClientTest(IsolatedAsyncioTestCase):
         key = "my_secret"
         value = base64.b64encode(data).decode()
 
-        res: BoolResult = await self.client.str_put(key, value)
+        res: IntResult = await self.client.str_put(key, value)
         self.assertIsNone(res.error)
         
         getRes: StrResult = await self.client.str_get(key)
         self.assertIsNone(getRes.error)
         self.assertEqual(base64.b64decode(getRes.result.encode()), data)
 
-        res = await self.client.str_del(key)
-        self.assertTrue(res.result)
+        delRes: BoolResult = await self.client.str_del(key)
+        self.assertTrue(delRes.result)
+        
+        # Make sure that the key doesn't exist.
+        getRes = await self.client.str_get(key)
+        self.assertEqual(getRes.status, 404)
