@@ -1,4 +1,4 @@
-## Python client for KVS service.
+## Overview
 Python client to interact with the key-value storage service. The client relies on `aiohttp` python library for making asynchronous requests to the service, and a `click` tool to provide the same functionality via the cli.
 
 ### Set up

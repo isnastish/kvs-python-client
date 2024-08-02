@@ -1,3 +1,5 @@
+import numpy as np
+
 import os
 import logging
 import json
@@ -19,7 +21,8 @@ from .results import (
     IntResult,
     BoolResult,
     FloatResult,
-    DictResult
+    DictResult, 
+    UintResult,
 )
 
 _KVS_SERVICE_URL = os.getenv("KVS_SERVICE_URL", "http://localhost:8080")
@@ -91,7 +94,7 @@ class Client:
         """
         res: StrResult
         async with self._client.post(self._base_url / "echo", data=input, headers={"content-length": str(len(input))}) as r:
-            res = StrResult(status=r.status, url=r.url, params=(input))
+            res = StrResult(status=r.status, url=r.url, params=(input,))
             if not r.ok: res.error = await r.text()
             else: res.result = await r.text()
         return res
@@ -107,7 +110,7 @@ class Client:
         """
         res: StrResult
         async with self._client.post(self._base_url / "hello") as r:
-            res = StrResult(url=r.url, status=r.status)
+            res = StrResult(url=r.url, status=r.status, params=("none",))
             if not r.ok: res.error = await r.text()
             else: res.result = await r.text()
         return res
@@ -127,7 +130,7 @@ class Client:
 
         url = URL(self._base_url / "fibo").with_query({"n": str(n)})
         async with self._client.post(url=url) as r:
-            res = IntResult(status=r.status, url=r.url, params=(n))
+            res = IntResult(status=r.status, url=r.url, params=(n,))
             if not r.ok: res.error = await r.text() 
             else: res.result = int(await r.read(), base=10)
         return res
@@ -143,7 +146,7 @@ class Client:
         """
         res: IntResult
         async with self._client.put(self._base_url / f"int-incr/{key}") as r:
-            res = IntResult(status=r.status, url=r.url, params=(key))
+            res = IntResult(status=r.status, url=r.url, params=(key,))
             if not r.ok(): res.error = await r.text()
             else: res.result = int(await r.text(), base=10) 
         return res
@@ -181,34 +184,33 @@ class Client:
         return res
 
         
-    async def int_put_d(self, kv_pair: dict[str, int], /) -> BoolResult:
+    async def int_put_d(self, kv_pair: dict[str, int], /) -> IntResult:
         """Put integer value into the remote integer storage.
 
         :param kv_pair: dictionary holding key-value pair. 
-        :returns: BoolResult. See `int_put`.
+        :returns: IntResult. See `int_put`.
         :raises KeyError: if the dictionary is empty.
         """
         key, value = kv_pair.popitem()
         return await self.int_put(key, value)
 
 
-    async def int_put(self, key: str, value: int, /) -> BoolResult:  
+    async def int_put(self, key: str, value: np.int32, /) -> IntResult:
         """Put key into the integer storage.
 
         :param key: key to be inserted into the storage. 
                 If the key already exists, it will be updated with a new value.
         :param value: a new value.
-        :returns: BoolReslt with result member set to true if the key was deleted.
+        :returns: IntResult with result member set to true if the key was deleted.
                 Otherwise check the status and the error members.
         """
-        res: BoolResult
-        async with self._client.put(
-            self._base_url / f"int-put/{key}", data=str(value), 
-            headers={"content-length": str(len(f"{value}"))}
-        ) as r:
-            res = BoolResult(status=r.status, url=r.url, params=(key, value))
-            if not r.ok: res.error = await r.text() 
-            else: res.result = True
+        _logger.info("int storage put, key: %s, value: %s", key, value)
+
+        res: IntResult
+        async with self._client.put(self._base_url / f"int-put/{key}", data=str(value)) as r:
+            res = IntResult(status=r.status, url=r.url, params=(key, value))
+            if not r.ok: res.error = await r.text()
+            else: res.result = r.status
         return res
 
 
@@ -220,9 +222,11 @@ class Client:
                 If the key doesn't exist, status will be set to 404.
                 Check status and error members.
         """
+        _logger.info("int storage get, key: %s", key)
+
         res: IntResult
         async with self._client.get(self._base_url / f"int-get/{key}") as r:
-            res = IntResult(status=r.status, url=r.url, params=(key)) 
+            res = IntResult(status=r.status, url=r.url, params=(key,)) 
             if not r.ok: res.error = await r.text() 
             else: res.result = int(await r.read(), base=10)
         return res
@@ -235,9 +239,11 @@ class Client:
         :returns: BoolResult with result member set to true if the key was deleted.
                 Otherwise check the status and the error members.
         """
+        _logger.info("int  storage del, key: %s", key)
+        
         res: BoolResult
         async with self._client.delete(self._base_url / f"int-del/{key}") as r:
-            res = BoolResult(status=r.status, url=r.url, params=(key))
+            res = BoolResult(status=r.status, url=r.url, params=(key,))
             if not r.ok: res.error = await r.text() 
             else:
                 if r.headers.get("Deleted"): 
@@ -245,35 +251,33 @@ class Client:
         return res
 
 
-    async def float_put_d(self, kv_pair: dict[str, float], /) -> BoolResult:
+    async def float_put_d(self, kv_pair: dict[str, float], /) -> IntResult:
         """Put float value into the remote float storage.
 
         :param kv_pair: dictionary holding the key and the value.
-        :returns: BoolResult. See `float_put`.
+        :returns: IntResult. See `float_put`.
         :raises KeyError: if dictionary is empty.
         """
         key, value = kv_pair.popitem()
         return await self.float_put(key, value)
 
 
-    async def float_put(self, key: str, value: int, /) -> BoolResult:
+    async def float_put(self, key: str, value: np.float32, /) -> IntResult:
         """Put float value into the remote float storage.
     
         :param key: key to be inserted into the float storage.
                 If the key already exists, the value will be updated.
         :param value: a new value.
-        :return: BoolResult with result member set to true if the operation succeeded.
+        :return: IntResult with result member set to true if the operation succeeded.
                 Otherwise check status and error members.
         """
-        res: FloatResult
-        async with self._client.put(
-            self._base_url / f"float-put/{key}", 
-            data=str(value), 
-            headers={"content-length": str(len(f"{value}"))}
-        ) as r:
-            res = FloatResult(status=r.status, url=r.url, params=(key, value))
+        _logger.info("float storage put, key: %s, value %s", key, value)
+
+        res: IntResult
+        async with self._client.put(self._base_url / f"float-put/{key}", data=str(value)) as r:
+            res = IntResult(status=r.status, url=r.url, params=(key, value))
             if not r.ok: res.error = await r.text()
-            else: res.result = True
+            else: res.result = r.status
         return res
 
 
@@ -284,9 +288,11 @@ class Client:
         :returns: FloatResult containing the value if succeeded.
                 Otherwise, check the status and error members.
         """
+        _logger.info("float storage get, key: %s", key)
+        
         res: FloatResult
         async with self._client.get(self._base_url / f"float-get/{key}") as r:
-            res = FloatResult(status=r.status, url=r.url, params=(key))
+            res = FloatResult(status=r.status, url=r.url, params=(key,))
             if not r.ok: res.error = await r.text()
             else: res.result = float(await r.read())
         return res
@@ -300,9 +306,11 @@ class Client:
                 Otherwise, the status will contain the response status, 
                 and the error member will contain an error, if any.
         """
+        _logger.info("float storage del, key: %s", key)
+
         res: BoolResult
         async with self._client.delete(self._base_url / f"float-del/{key}") as r:
-            res = BoolResult(status=r.status, url=r.url, params=(key))
+            res = BoolResult(status=r.status, url=r.url, params=(key,))
             if not r.ok: res.error = await r.text()
             else: 
                 if r.headers.get("Deleted"):
@@ -310,18 +318,18 @@ class Client:
         return res
 
 
-    async def str_put_d(self, kv_pair: dict[str, str], /) -> BoolResult:
+    async def str_put_d(self, kv_pair: dict[str, str], /) -> IntResult:
         """Put string into the remote string storage.
         
         :param kv_pair: dictionary holding a key and a value.
-        :returns: BoolResult. See `str_put`.
+        :returns: IntResult. See `str_put`.
         :raises: KeyError if dictionary is empty.
         """
         key, value = kv_pair.popitem()
         return await self.str_put(key, value)
 
 
-    async def str_put(self, key: str, value: str, /) -> BoolResult:
+    async def str_put(self, key: str, value: str, /) -> IntResult:
         """Put string into the remote string storage.
 
         :param key: key to be inserted into the string storage. 
@@ -331,15 +339,13 @@ class Client:
                 if the operation succeeded. Otherwise check
                 the status and error members.
         """
-        res: BoolResult
-        async with self._client.put(
-            self._base_url / f"str-put/{key}",
-            data=value,
-            headers={"content-length": str(len(value))}
-        ) as r:
-            res = BoolResult(status=r.status, url=r.url, params=(key, value))
+        _logger.info("str storage put, key: %s, value: %s", key, value)
+        
+        res: IntResult
+        async with self._client.put(self._base_url / f"str-put/{key}", data=value) as r:
+            res = IntResult(status=r.status, url=r.url, params=(key, value))
             if not r.ok: res.error = await r.text() 
-            else: res.result = (r.status == 200) 
+            else: res.result = r.status
         return res
 
 
@@ -352,9 +358,11 @@ class Client:
                 Otherwise status will contain the response status, 
                 and an error member will contain an error message, if any.
         """
+        _logger.info("str storage get, key: %s", key)
+        
         res: StrResult
         async with self._client.get(self._base_url / f"str-get/{key}") as r:
-            res = StrResult(status=r.status, url=r.url, params=(key))
+            res = StrResult(status=r.status, url=r.url, params=(key,))
             if not r.ok: res.error = await r.text() 
             else: res.result = await r.text()
         return res
@@ -369,9 +377,11 @@ class Client:
                 Otherwise status will contain the response status, 
                 and an error member will contain an error message, if any.
         """
+        _logger.info("str storage del, key: %s", key)
+        
         res: BoolResult
         async with self._client.delete(self._base_url / f"str-del/{key}") as r:
-            res = BoolResult(status=r.status, url=r.url, params=(key))
+            res = BoolResult(status=r.status, url=r.url, params=(key,))
             if not r.ok: res.error = await r.text()
             else: 
                 if r.headers.get("Deleted"):
@@ -379,7 +389,7 @@ class Client:
         return res
 
 
-    async def dict_put_d(self, kv_pair: dict[str, dict[str, str]], /) -> BoolResult:
+    async def dict_put_d(self, kv_pair: dict[str, dict[str, str]], /) -> IntResult:
         """Put map int the remote map storage.
 
         :param kv_pair: dictionary containing a key and a value (nested dictionary) to be inserted. 
@@ -390,7 +400,7 @@ class Client:
         return await self.dict_put(key, value)
 
 
-    async def dict_put(self, key: str, value: dict[str, str], /) -> BoolResult:
+    async def dict_put(self, key: str, value: dict[str, str], /) -> IntResult:
         """Put map into the remote map storage with the following key.
         
         :param key: a new key to be inserted. If the key already exists
@@ -401,18 +411,16 @@ class Client:
                 and the error member will contain the error message, if any.
         :raises TypeError: if dictionary contains non-pod keys.
         """
-        obj = json.dumps(obj=value, skipkeys=True)
-        _logger.info("Serialized object %s", obj)
+        _logger.info("map storage put, key: %s, value: %s", key, value)
         
-        res: BoolResult
-        async with self._client.put(
-            self._base_url / f"map-put/{key}",
-            data=obj,
-            headers={"content-length": f"{len(obj)}"}
-        ) as r:
-            res = BoolResult(status=r.status, url=r.url, params=(key, value))
+        obj = json.dumps(obj=value, skipkeys=True)
+        
+        res: IntResult
+        async with self._client.put(self._base_url / f"map-put/{key}", data=obj) as r:
+            res = IntResult(status=r.status, url=r.url, params=(key, value))
             if not r.ok: res.error = await r.text()
-            else: res.result = (r.status == 200)
+            else: 
+                res.result = r.status
         return res
 
 
@@ -424,9 +432,11 @@ class Client:
                 Otherwise check the status and the error members.
         :raises JSONDecodeError: If the response contains invalid json.
         """
+        _logger.info("map storage get, key: %s", key)
+        
         res: DictResult
         async with self._client.get(self._base_url / f"map-get/{key}") as r:
-            res = DictResult(status=r.status, url=r.url, params=(key))
+            res = DictResult(status=r.status, url=r.url, params=(key,))
             if not r.ok: res.error = await r.text()
             else: 
                 d = json.loads(s=await r.read())
@@ -442,11 +452,57 @@ class Client:
         :returns: BoolResult with result member set to true if the key was deleted.
                 Otherwise check the status and the error members.
         """
+        _logger.info("map storage del, key: %s", key)
+        
         res: BoolResult
         async with self._client.delete(self._base_url / f"map-del/{key}") as r:
-            res = BoolResult(status=r.status, url=r.url, params=(key))
+            res = BoolResult(status=r.status, url=r.url, params=(key,))
             if not r.ok: res.error = await r.text()
             else: 
+                if r.headers.get("Deleted"):
+                    res.result = True
+        return res
+
+
+    async def uint_put(self, key: str, value: np.uint32, /) -> IntResult:
+        """_summary_
+        Returns:
+            BoolResult: _description_
+        """
+        _logger.info("uint storage put, key: %s, value: %s", key, value)
+
+        
+        res: IntResult
+        async with self._client.put(self._base_url / f"uint/put/{key}", data=str(value)) as r:
+            res = IntResult(status=r.status, url=r.url, params=(key, value))
+            if not r.ok: res.error = await r.text()
+            else: 
+                res.result = r.status
+        return res
+    
+    
+    async def uint_get(self, key: str, /) -> UintResult:
+        """"""
+        _logger.info("uint storage get, key: %s", key)
+
+        res: UintResult
+        async with self._client.get(self._base_url / f"uint/get/{key}") as r:
+            res = UintResult(status=r.status, url=r.url, params=(key,))
+            if not r.ok: res.error = await r.text()
+            else:
+                res.result = np.array([await r.read()]).astype(np.uint32)[0]
+        return res
+        
+        
+    async def uint_del(self, key: str, /) -> BoolResult:
+        """"""
+        _logger.info("uint storage del, key: %s", key)
+        
+        res: BoolResult
+        async with self._client.delete(self._base_url / f"uint/del/{key}")as r:
+            res = BoolResult(status=r.status, url=r.url, params=(key,))
+            if not r.ok: res.error = await r.text()
+            else:
                 if r.headers.get("Deleted"):
                     res.result = True
         return res

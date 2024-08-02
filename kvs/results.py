@@ -2,6 +2,9 @@ import typing as t
 from dataclasses import dataclass, field
 from yarl import URL
 
+import numpy as np
+
+
 @dataclass
 class BaseResult:
     """Base result for all kvs commands."""
@@ -41,3 +44,9 @@ class DictResult(BaseResult):
     # NOTE: Default value for dict won't work here, we have to use default_factory instead, 
     # see: https://stackoverflow.com/questions/53632152/why-cant-dataclasses-have-mutable-defaults-in-their-class-attributes-declaratio
     result: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass
+class UintResult(BaseResult):
+    """Uint kvs command result"""
+    result: np.uint32 = 0
