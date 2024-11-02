@@ -12,4 +12,4 @@ opentelemetry-instrumentation-aiohttp-client = "*"
 numpy = "*"
 
 [requires]
-python_version = "3.10"
+python_version = "3.12"
